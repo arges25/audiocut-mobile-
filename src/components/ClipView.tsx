@@ -1,5 +1,6 @@
 import { memo, useRef } from 'react';
 import type { AudioSource, Clip } from '../types';
+import { hasAnyEffectEnabled } from '../types';
 import Waveform from './Waveform';
 
 interface Props {
@@ -8,12 +9,14 @@ interface Props {
   pxPerSec: number;
   isSelected: boolean;
   trackHeight: number;
+  longPressMs: number;
   onSelect: (id: string) => void;
   onMove: (id: string, newTimelineStart: number) => void;
   onTrimLeft: (id: string, newSourceStart: number, newTimelineStart: number) => void;
   onTrimRight: (id: string, newSourceEnd: number) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
+  onLongPress: (id: string, x: number, y: number) => void;
 }
 
 const HANDLE_WIDTH = 14;
@@ -26,45 +29,74 @@ function ClipView({
   pxPerSec,
   isSelected,
   trackHeight,
+  longPressMs,
   onSelect,
   onMove,
   onTrimLeft,
   onTrimRight,
   onDragStart,
   onDragEnd,
+  onLongPress,
 }: Props) {
   const duration = clip.sourceEnd - clip.sourceStart;
   const width = Math.max(HANDLE_WIDTH * 2, duration * pxPerSec);
   const left = clip.timelineStart * pxPerSec;
+  const bodyHeight = trackHeight - 10;
 
   const dragState = useRef<{
     mode: 'move' | 'trim-left' | 'trim-right';
     startX: number;
+    startY: number;
     initial: { timelineStart: number; sourceStart: number; sourceEnd: number };
     moved: boolean;
+    longPressTimer: ReturnType<typeof setTimeout> | null;
+    longPressFired: boolean;
   } | null>(null);
 
   function handlePointerDown(e: React.PointerEvent, mode: 'move' | 'trim-left' | 'trim-right') {
     e.stopPropagation();
     (e.target as Element).setPointerCapture(e.pointerId);
-    dragState.current = {
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+
+    const state = {
       mode,
-      startX: e.clientX,
+      startX: clientX,
+      startY: clientY,
       initial: {
         timelineStart: clip.timelineStart,
         sourceStart: clip.sourceStart,
         sourceEnd: clip.sourceEnd,
       },
       moved: false,
+      longPressTimer: null as ReturnType<typeof setTimeout> | null,
+      longPressFired: false,
     };
+    dragState.current = state;
     onDragStart();
+
+    if (mode === 'move') {
+      state.longPressTimer = setTimeout(() => {
+        if (dragState.current === state && !state.moved) {
+          state.longPressFired = true;
+          onLongPress(clip.id, clientX, clientY);
+        }
+      }, longPressMs);
+    }
   }
 
   function handlePointerMove(e: React.PointerEvent) {
     const ds = dragState.current;
-    if (!ds) return;
+    if (!ds || ds.longPressFired) return;
     const dx = e.clientX - ds.startX;
-    if (Math.abs(dx) > MOVE_THRESHOLD) ds.moved = true;
+    const dy = e.clientY - ds.startY;
+    if (Math.hypot(dx, dy) > MOVE_THRESHOLD) {
+      ds.moved = true;
+      if (ds.longPressTimer) {
+        clearTimeout(ds.longPressTimer);
+        ds.longPressTimer = null;
+      }
+    }
     const deltaSeconds = dx / pxPerSec;
     const { initial } = ds;
 
@@ -87,23 +119,31 @@ function ClipView({
     }
   }
 
-  function handlePointerUp(e: React.PointerEvent) {
+  function handlePointerUp() {
     const ds = dragState.current;
     dragState.current = null;
-    if (ds && !ds.moved) {
+    if (!ds) return;
+    if (ds.longPressTimer) clearTimeout(ds.longPressTimer);
+    if (ds.longPressFired) return;
+    if (!ds.moved) {
       onSelect(clip.id);
-    } else if (ds && ds.moved) {
+    } else {
       onDragEnd();
     }
   }
 
+  const showIntroShade = clip.introType !== 'none' && clip.fadeIn > 0;
+  const showOutroShade = clip.outroType !== 'none' && clip.fadeOut > 0;
+  const fxActive = hasAnyEffectEnabled(clip.effects);
+
   return (
     <div
       className={`clip ${isSelected ? 'clip-selected' : ''}`}
-      style={{ left, width, height: trackHeight - 8 }}
+      style={{ left, width, height: bodyHeight }}
       onPointerDown={(e) => handlePointerDown(e, 'move')}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
       <div className="clip-waveform">
         <Waveform
@@ -111,25 +151,26 @@ function ClipView({
           sourceStart={clip.sourceStart}
           sourceEnd={clip.sourceEnd}
           width={width}
-          height={trackHeight - 8}
+          height={bodyHeight}
         />
       </div>
-      {(clip.fadeIn > 0 || clip.fadeOut > 0) && (
-        <svg className="clip-fade-overlay" width={width} height={trackHeight - 8} preserveAspectRatio="none">
-          {clip.fadeIn > 0 && (
+      {(showIntroShade || showOutroShade) && (
+        <svg className="clip-fade-overlay" width={width} height={bodyHeight} preserveAspectRatio="none">
+          {showIntroShade && (
             <polygon
-              points={`0,0 ${(clip.fadeIn / duration) * width},0 0,${trackHeight - 8}`}
+              points={`0,0 ${(clip.fadeIn / duration) * width},0 0,${bodyHeight}`}
               fill="rgba(0,0,0,0.45)"
             />
           )}
-          {clip.fadeOut > 0 && (
+          {showOutroShade && (
             <polygon
-              points={`${width},0 ${width - (clip.fadeOut / duration) * width},0 ${width},${trackHeight - 8}`}
+              points={`${width},0 ${width - (clip.fadeOut / duration) * width},0 ${width},${bodyHeight}`}
               fill="rgba(0,0,0,0.45)"
             />
           )}
         </svg>
       )}
+      {fxActive && <span className="clip-fx-badge">✨</span>}
       {isSelected && (
         <>
           <div
@@ -137,12 +178,14 @@ function ClipView({
             onPointerDown={(e) => handlePointerDown(e, 'trim-left')}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
           />
           <div
             className="clip-handle clip-handle-right"
             onPointerDown={(e) => handlePointerDown(e, 'trim-right')}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
           />
         </>
       )}

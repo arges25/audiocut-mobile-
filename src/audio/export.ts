@@ -1,60 +1,47 @@
-import type { AudioSource, Clip } from '../types';
-
-function scheduleGain(
-  gainNode: GainNode,
-  clip: Clip,
-  when: number,
-  clipDuration: number
-) {
-  const g = gainNode.gain;
-  const vol = clip.volume;
-  const fadeIn = Math.min(clip.fadeIn, clipDuration);
-  const fadeOut = Math.min(clip.fadeOut, clipDuration);
-
-  if (fadeIn > 0) {
-    g.setValueAtTime(0, when);
-    g.linearRampToValueAtTime(vol, when + fadeIn);
-  } else {
-    g.setValueAtTime(vol, when);
-  }
-
-  if (fadeOut > 0) {
-    const fadeOutStart = clipDuration - fadeOut;
-    g.setValueAtTime(vol, when + fadeOutStart);
-    g.linearRampToValueAtTime(0, when + clipDuration);
-  }
-}
+import type { AudioSource, Clip, TrackState } from '../types';
+import { clipEffectiveEnd } from '../types';
+import { buildTrackBuses, scheduleClip } from './graph';
 
 export async function renderMix(
   clips: Clip[],
   sources: Map<string, AudioSource>,
-  sampleRate = 44100
+  tracks: TrackState[],
+  sampleRate = 44100,
+  onProgress?: (fraction: number) => void
 ): Promise<AudioBuffer> {
   let totalDuration = 0.5;
   for (const clip of clips) {
-    const end = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
+    const end = clipEffectiveEnd(clip);
     if (end > totalDuration) totalDuration = end;
   }
 
   const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * sampleRate), sampleRate);
+  const buses = buildTrackBuses(offlineCtx, tracks, offlineCtx.destination);
 
   for (const clip of clips) {
     const source = sources.get(clip.sourceId);
     if (!source) continue;
-    const clipDuration = clip.sourceEnd - clip.sourceStart;
-    if (clipDuration <= 0) continue;
-
-    const bufferSource = offlineCtx.createBufferSource();
-    bufferSource.buffer = source.buffer;
-    const gainNode = offlineCtx.createGain();
-    bufferSource.connect(gainNode);
-    gainNode.connect(offlineCtx.destination);
-
-    scheduleGain(gainNode, clip, clip.timelineStart, clipDuration);
-    bufferSource.start(clip.timelineStart, clip.sourceStart, clipDuration);
+    const bus = buses[clip.trackId];
+    if (!bus) continue;
+    scheduleClip({ ctx: offlineCtx, clip, source, trackInput: bus.input, when: clip.timelineStart, offsetIntoClip: 0 });
   }
 
-  return offlineCtx.startRendering();
+  if (onProgress) {
+    // Real progress: suspend/resume at even time steps, each resolving exactly
+    // when that much audio has actually been rendered (not a fake timer).
+    const steps = 20;
+    for (let i = 1; i < steps; i++) {
+      const t = (totalDuration * i) / steps;
+      offlineCtx.suspend(t).then(() => {
+        onProgress(i / steps);
+        offlineCtx.resume();
+      });
+    }
+  }
+
+  const result = await offlineCtx.startRendering();
+  onProgress?.(1);
+  return result;
 }
 
 export function audioBufferToWav(buffer: AudioBuffer): Blob {

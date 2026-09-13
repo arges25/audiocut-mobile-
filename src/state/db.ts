@@ -1,4 +1,4 @@
-import type { Clip, PersistedProject, PersistedSource } from '../types';
+import type { Clip, PersistedProject, PersistedSource, TrackState } from '../types';
 
 const DB_NAME = 'audiocut-db';
 const DB_VERSION = 1;
@@ -17,7 +17,13 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-export async function saveProject(data: { clips: Clip[]; activeTrackId: number; magnetEnabled: boolean }): Promise<void> {
+export async function saveProject(data: {
+  clips: Clip[];
+  tracks: TrackState[];
+  activeTrackId: number;
+  magnetEnabled: boolean;
+  autosaveEnabled: boolean;
+}): Promise<void> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('project', 'readwrite');
