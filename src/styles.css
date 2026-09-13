@@ -46,6 +46,12 @@ html, body {
   letter-spacing: 0.3px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .btn {
   background: #2a2b30;
   color: #fff;
@@ -78,6 +84,26 @@ html, body {
   background: #7a2020;
 }
 
+.btn-icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-toggle-on {
+  background: #ff5a36;
+}
+
+.btn-track-choice {
+  background: #33414f;
+  flex: 1;
+}
+
 .btn-play {
   width: 52px;
   height: 52px;
@@ -102,6 +128,7 @@ html, body {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
 }
 
 .timeline-content {
@@ -131,38 +158,56 @@ html, body {
   color: #8a8b90;
 }
 
+/*
+ * track-row uses a single-column grid so track-label and track-lane occupy
+ * the SAME cell (stacked via z-index) instead of sitting side by side in a
+ * flex row. This keeps track-lane's x=0 aligned exactly with the ruler and
+ * playhead (both live directly in timeline-content with no offset) — a flex
+ * layout previously pushed track-lane 64px to the right of that origin,
+ * which is why the playhead and split point looked shifted from the clips.
+ */
 .track-row {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 100%;
   border-bottom: 1px solid #202126;
 }
 
 .track-label {
+  grid-column: 1;
+  grid-row: 1;
   position: sticky;
   left: 0;
-  z-index: 5;
-  width: 64px;
-  flex-shrink: 0;
-  background: #1c1d22;
+  z-index: 6;
+  justify-self: start;
+  width: 46px;
+  height: 100%;
+  pointer-events: none;
+  background: rgba(28, 29, 34, 0.92);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: #9a9ba2;
   text-align: center;
   padding: 4px;
   border-right: 1px solid #2a2b30;
+  border-radius: 0 8px 8px 0;
 }
 
 .track-label-active {
   color: #ff5a36;
-  background: #26201d;
+  background: rgba(38, 32, 29, 0.92);
 }
 
 .track-lane {
+  grid-column: 1;
+  grid-row: 1;
   position: relative;
-  flex: 1;
+  width: 100%;
+  height: 100%;
   background: #16171b;
 }
 
@@ -251,6 +296,7 @@ html, body {
 
 .slider-field input[type='range'] {
   width: 90px;
+  accent-color: #ff5a36;
 }
 
 .active-track-hint {
@@ -270,4 +316,26 @@ html, body {
   font-variant-numeric: tabular-nums;
   font-size: 15px;
   min-width: 60px;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .topbar {
+    padding: 6px 14px;
+  }
+  .app-title {
+    font-size: 16px;
+  }
+  .bottombar {
+    padding: 6px 14px calc(6px + env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+  .btn {
+    padding: 7px 12px;
+    font-size: 13px;
+  }
+  .btn-play {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
 }

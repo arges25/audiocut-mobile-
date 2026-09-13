@@ -1,6 +1,6 @@
 import type { Peaks } from '../types';
 
-const PEAKS_PER_SECOND = 50;
+const PEAKS_PER_SECOND = 100;
 
 export function computePeaks(buffer: AudioBuffer): Peaks {
   const channelCount = buffer.numberOfChannels;
