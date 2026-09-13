@@ -1,15 +1,19 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import type { AudioSource, Clip } from '../types';
+import type { AudioSource, Clip, TrackState } from '../types';
 import { TRACK_NAMES } from '../types';
 import { MAX_PX_PER_SEC, MIN_PX_PER_SEC } from '../constants';
 import ClipView from './ClipView';
+import TrackHeader from './TrackHeader';
 
-const TRACK_HEIGHT = 72;
+const TRACK_HEIGHT = 76;
 const RULER_HEIGHT = 28;
+const HEADER_WIDTH = 68;
+const LONG_PRESS_MS = 500;
 
 interface Props {
   clips: Clip[];
   sources: Map<string, AudioSource>;
+  tracks: TrackState[];
   pxPerSec: number;
   onZoomChange: (pxPerSec: number) => void;
   playheadTime: number;
@@ -23,6 +27,10 @@ interface Props {
   onTrimRight: (id: string, newSourceEnd: number) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
+  onLongPressClip: (id: string, x: number, y: number) => void;
+  onTrackVolume: (trackId: number) => void;
+  onTrackMuteToggle: (trackId: number) => void;
+  onTrackFx: (trackId: number) => void;
 }
 
 interface PointerInfo {
@@ -34,6 +42,7 @@ interface PointerInfo {
 export default function Timeline({
   clips,
   sources,
+  tracks,
   pxPerSec,
   onZoomChange,
   playheadTime,
@@ -47,6 +56,10 @@ export default function Timeline({
   onTrimRight,
   onDragStart,
   onDragEnd,
+  onLongPressClip,
+  onTrackVolume,
+  onTrackMuteToggle,
+  onTrackFx,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -75,7 +88,6 @@ export default function Timeline({
     }
   }, [playheadPx, isPlaying]);
 
-  // Keep the pinch midpoint anchored under the fingers as pxPerSec changes.
   useLayoutEffect(() => {
     const pinch = pinchRef.current;
     const el = scrollRef.current;
@@ -165,27 +177,43 @@ export default function Timeline({
   for (let t = viewStart; t <= viewEnd; t += interval) ticks.push(Math.max(0, t));
 
   return (
-    <div
-      className="timeline-scroll"
-      ref={scrollRef}
-      onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-    >
-      <div className="timeline-content" style={{ width: contentWidth }}>
-        <div className="ruler" style={{ height: RULER_HEIGHT }}>
-          {ticks.map((t) => (
-            <div key={t} className="ruler-tick" style={{ left: t * pxPerSec }}>
-              <span>{formatTickLabel(t, interval)}</span>
-            </div>
-          ))}
-        </div>
-
+    <div className="timeline-row">
+      <div className="track-headers" style={{ width: HEADER_WIDTH }}>
+        <div className="track-headers-spacer" style={{ height: RULER_HEIGHT }} />
         {TRACK_NAMES.map((name, trackId) => (
-          <div key={trackId} className="track-row" style={{ height: TRACK_HEIGHT }}>
-            <div className="track-lane">
+          <TrackHeader
+            key={trackId}
+            name={name}
+            track={tracks[trackId]}
+            isActive={activeTrackId === trackId}
+            height={TRACK_HEIGHT}
+            onVolume={() => onTrackVolume(trackId)}
+            onToggleMute={() => onTrackMuteToggle(trackId)}
+            onFx={() => onTrackFx(trackId)}
+          />
+        ))}
+      </div>
+
+      <div
+        className="timeline-scroll"
+        ref={scrollRef}
+        onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        <div className="timeline-content" style={{ width: contentWidth }}>
+          <div className="ruler" style={{ height: RULER_HEIGHT }}>
+            {ticks.map((t) => (
+              <div key={t} className="ruler-tick" style={{ left: t * pxPerSec }}>
+                <span>{formatTickLabel(t, interval)}</span>
+              </div>
+            ))}
+          </div>
+
+          {TRACK_NAMES.map((_, trackId) => (
+            <div key={trackId} className="track-lane" style={{ height: TRACK_HEIGHT }}>
               {clips
                 .filter((c) => c.trackId === trackId)
                 .map((clip) => {
@@ -199,23 +227,22 @@ export default function Timeline({
                       pxPerSec={pxPerSec}
                       isSelected={selectedClipId === clip.id}
                       trackHeight={TRACK_HEIGHT}
+                      longPressMs={LONG_PRESS_MS}
                       onSelect={onSelectClip}
                       onMove={onMoveClip}
                       onTrimLeft={onTrimLeft}
                       onTrimRight={onTrimRight}
                       onDragStart={onDragStart}
                       onDragEnd={onDragEnd}
+                      onLongPress={onLongPressClip}
                     />
                   );
                 })}
             </div>
-            <div className={`track-label ${activeTrackId === trackId ? 'track-label-active' : ''}`}>
-              {name}
-            </div>
-          </div>
-        ))}
+          ))}
 
-        <div className="playhead" style={{ left: playheadPx, height: RULER_HEIGHT + TRACK_NAMES.length * TRACK_HEIGHT }} />
+          <div className="playhead" style={{ left: playheadPx, height: RULER_HEIGHT + TRACK_NAMES.length * TRACK_HEIGHT }} />
+        </div>
       </div>
     </div>
   );

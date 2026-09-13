@@ -1,8 +1,10 @@
-import type { AudioSource, Clip } from '../types';
+import type { AudioSource, Clip, TrackState } from '../types';
+import { clipEffectiveEnd } from '../types';
+import { buildTrackBuses, scheduleClip } from './graph';
 
 interface ActiveNode {
   source: AudioBufferSourceNode;
-  gain: GainNode;
+  extra: AudioNode[];
 }
 
 export class PlaybackEngine {
@@ -25,7 +27,7 @@ export class PlaybackEngine {
     return this.startOffset + (this.ctx.currentTime - this.startContextTime);
   }
 
-  async play(clips: Clip[], sources: Map<string, AudioSource>, fromTime: number) {
+  async play(clips: Clip[], sources: Map<string, AudioSource>, tracks: TrackState[], fromTime: number) {
     await this.ctx.resume();
     this.stopAllNodes();
 
@@ -33,66 +35,23 @@ export class PlaybackEngine {
     this.startContextTime = this.ctx.currentTime;
     this.playing = true;
 
+    const buses = buildTrackBuses(this.ctx, tracks, this.ctx.destination);
+
     for (const clip of clips) {
       const source = sources.get(clip.sourceId);
       if (!source) continue;
-      const clipDuration = clip.sourceEnd - clip.sourceStart;
-      const clipTimelineEnd = clip.timelineStart + clipDuration;
-      if (clipTimelineEnd <= fromTime) continue;
+      const effectiveEnd = clipEffectiveEnd(clip);
+      if (effectiveEnd <= fromTime) continue;
 
       const offsetIntoClip = Math.max(0, fromTime - clip.timelineStart);
       const when = this.ctx.currentTime + Math.max(0, clip.timelineStart - fromTime);
-      const sourceOffset = clip.sourceStart + offsetIntoClip;
-      const playDuration = clipDuration - offsetIntoClip;
-      if (playDuration <= 0) continue;
+      const bus = buses[clip.trackId];
+      if (!bus) continue;
 
-      const bufferSource = this.ctx.createBufferSource();
-      bufferSource.buffer = source.buffer;
-      const gainNode = this.ctx.createGain();
-      bufferSource.connect(gainNode);
-      gainNode.connect(this.ctx.destination);
-
-      this.scheduleGain(gainNode, clip, when, offsetIntoClip, clipDuration);
-
-      bufferSource.start(when, sourceOffset, playDuration);
-      this.activeNodes.push({ source: bufferSource, gain: gainNode });
-    }
-  }
-
-  private scheduleGain(
-    gainNode: GainNode,
-    clip: Clip,
-    when: number,
-    offsetIntoClip: number,
-    clipDuration: number
-  ) {
-    const g = gainNode.gain;
-    const vol = clip.volume;
-    const fadeIn = Math.min(clip.fadeIn, clipDuration);
-    const fadeOut = Math.min(clip.fadeOut, clipDuration);
-
-    g.cancelScheduledValues(when);
-
-    if (fadeIn > 0 && offsetIntoClip < fadeIn) {
-      const remainingFadeIn = fadeIn - offsetIntoClip;
-      const startVol = vol * (offsetIntoClip / fadeIn);
-      g.setValueAtTime(startVol, when);
-      g.linearRampToValueAtTime(vol, when + remainingFadeIn);
-    } else {
-      g.setValueAtTime(vol, when);
-    }
-
-    const fadeOutStartInClip = clipDuration - fadeOut;
-    if (fadeOut > 0 && fadeOutStartInClip > offsetIntoClip) {
-      const timeToFadeOutStart = fadeOutStartInClip - offsetIntoClip;
-      g.setValueAtTime(vol, when + timeToFadeOutStart);
-      g.linearRampToValueAtTime(0, when + timeToFadeOutStart + fadeOut);
-    } else if (fadeOut > 0) {
-      const remainingFadeOut = clipDuration - offsetIntoClip;
-      const alreadyIn = fadeOut - (clipDuration - offsetIntoClip);
-      const startVol = vol * (1 - alreadyIn / fadeOut);
-      g.setValueAtTime(Math.max(0, startVol), when);
-      g.linearRampToValueAtTime(0, when + remainingFadeOut);
+      const scheduled = scheduleClip({ ctx: this.ctx, clip, source, trackInput: bus.input, when, offsetIntoClip });
+      if (scheduled) {
+        this.activeNodes.push({ source: scheduled.bufferSource, extra: scheduled.nodes });
+      }
     }
   }
 
@@ -119,7 +78,13 @@ export class PlaybackEngine {
         // already stopped
       }
       node.source.disconnect();
-      node.gain.disconnect();
+      for (const n of node.extra) {
+        try {
+          n.disconnect();
+        } catch {
+          // ignore
+        }
+      }
     }
     this.activeNodes = [];
   }
