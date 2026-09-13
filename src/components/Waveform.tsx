@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import type { AudioSource } from '../types';
 
 interface Props {
@@ -10,7 +10,7 @@ interface Props {
   color?: string;
 }
 
-export default function Waveform({ source, sourceStart, sourceEnd, width, height, color = 'rgba(255,255,255,0.85)' }: Props) {
+function Waveform({ source, sourceStart, sourceEnd, width, height, color = 'rgba(255,255,255,0.85)' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -43,3 +43,5 @@ export default function Waveform({ source, sourceStart, sourceEnd, width, height
 
   return <canvas ref={canvasRef} style={{ width: `${width}px`, height: `${height}px`, display: 'block' }} />;
 }
+
+export default memo(Waveform);

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { memo, useRef } from 'react';
 import type { AudioSource, Clip } from '../types';
 import Waveform from './Waveform';
 
@@ -13,13 +13,14 @@ interface Props {
   onTrimLeft: (id: string, newSourceStart: number, newTimelineStart: number) => void;
   onTrimRight: (id: string, newSourceEnd: number) => void;
   onDragStart: () => void;
+  onDragEnd: () => void;
 }
 
 const HANDLE_WIDTH = 14;
 const MOVE_THRESHOLD = 4;
 const MIN_DURATION = 0.1;
 
-export default function ClipView({
+function ClipView({
   clip,
   source,
   pxPerSec,
@@ -30,6 +31,7 @@ export default function ClipView({
   onTrimLeft,
   onTrimRight,
   onDragStart,
+  onDragEnd,
 }: Props) {
   const duration = clip.sourceEnd - clip.sourceStart;
   const width = Math.max(HANDLE_WIDTH * 2, duration * pxPerSec);
@@ -90,6 +92,8 @@ export default function ClipView({
     dragState.current = null;
     if (ds && !ds.moved) {
       onSelect(clip.id);
+    } else if (ds && ds.moved) {
+      onDragEnd();
     }
   }
 
@@ -145,3 +149,5 @@ export default function ClipView({
     </div>
   );
 }
+
+export default memo(ClipView);

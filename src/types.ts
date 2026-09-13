@@ -25,3 +25,26 @@ export interface Clip {
 
 export const TRACK_NAMES = ['Musique', 'Effets', 'Audio'];
 export const TRACK_COUNT = 3;
+
+/** Duration is derived from sourceStart/sourceEnd, never stored, to avoid desync. */
+export function clipDuration(clip: Clip): number {
+  return clip.sourceEnd - clip.sourceStart;
+}
+
+export function clipTimelineEnd(clip: Clip): number {
+  return clip.timelineStart + clipDuration(clip);
+}
+
+export interface PersistedProject {
+  clips: Clip[];
+  activeTrackId: number;
+  magnetEnabled: boolean;
+  savedAt: number;
+}
+
+export interface PersistedSource {
+  id: string;
+  name: string;
+  mimeType: string;
+  arrayBuffer: ArrayBuffer;
+}
