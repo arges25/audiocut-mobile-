@@ -11,6 +11,15 @@ import {
 import { computePeaks } from './audio/peaks';
 import { PlaybackEngine } from './audio/engine';
 import { renderMix, audioBufferToWav } from './audio/export';
+import { encodeMp3 } from './audio/mp3Encoder';
+import {
+  SILENT_KEEPALIVE_SRC,
+  setupMediaSessionHandlers,
+  updateMediaSessionMetadata,
+  setMediaSessionPlaybackState,
+  setMediaSessionPositionState,
+  configureAudioSession,
+} from './audio/mediaSession';
 import { EffectPreviewPlayer } from './audio/preview';
 import { computeSnapTargets, applySnap } from './audio/snap';
 import { useClipsHistory } from './state/useClipsHistory';
@@ -84,6 +93,7 @@ export default function App() {
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [activeTrackId, setActiveTrackId] = useState(0);
   const [playheadTime, setPlayheadTime] = useState(0);
+  const [scrubPreviewTime, setScrubPreviewTime] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [pxPerSec, setPxPerSec] = useState(DEFAULT_PX_PER_SEC);
   const [magnetEnabled, setMagnetEnabled] = useState(true);
@@ -93,6 +103,7 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<{ clipId: string; x: number; y: number } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bgAudioRef = useRef<HTMLAudioElement>(null);
   const sourcesRef = useRef(sources);
   sourcesRef.current = sources;
   const tracksRef = useRef(tracks);
@@ -110,6 +121,8 @@ export default function App() {
     const end = clipEffectiveEnd(c);
     if (end > totalDuration) totalDuration = end;
   }
+  const totalDurationRef = useRef(totalDuration);
+  totalDurationRef.current = totalDuration;
 
   // Load persisted project once on mount.
   useEffect(() => {
@@ -173,7 +186,9 @@ export default function App() {
     let raf: number;
     function tick() {
       if (engine.isPlaying) {
-        setPlayheadTime(engine.getCurrentTime());
+        const t = engine.getCurrentTime();
+        setPlayheadTime(t);
+        setMediaSessionPositionState(totalDurationRef.current, Math.min(t, totalDurationRef.current));
         raf = requestAnimationFrame(tick);
       }
     }
@@ -189,30 +204,112 @@ export default function App() {
     }
   }, [engine]);
 
-  async function handlePlayPause() {
-    if (isPlaying) {
+  // Stable (ref-backed) so Media Session action handlers registered once on
+  // mount never close over stale state — engine.isPlaying/refs are always current.
+  const handlePlayPause = useCallback(async () => {
+    if (engine.isPlaying) {
       engine.pause();
-      setPlayheadTime(engine.getCurrentTime());
+      const t = engine.getCurrentTime();
+      playheadRef.current = t;
+      setPlayheadTime(t);
       setIsPlaying(false);
     } else {
-      await engine.play(clipsRef.current, sourcesRef.current, tracksRef.current, playheadTime);
+      await engine.play(clipsRef.current, sourcesRef.current, tracksRef.current, playheadRef.current);
       setIsPlaying(true);
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine]);
 
-  function handleSeek(time: number) {
-    const clamped = Math.max(0, Math.min(time, totalDuration || time));
-    const wasPlaying = engine.isPlaying;
-    if (wasPlaying) engine.pause();
-    setPlayheadTime(clamped);
-    if (wasPlaying) {
-      engine.play(clipsRef.current, sourcesRef.current, tracksRef.current, clamped);
+  const handleSeek = useCallback(
+    (time: number) => {
+      const clamped = Math.max(0, Math.min(time, totalDurationRef.current || time));
+      const wasPlaying = engine.isPlaying;
+      if (wasPlaying) engine.pause();
+      playheadRef.current = clamped;
+      setPlayheadTime(clamped);
+      if (wasPlaying) {
+        engine.play(clipsRef.current, sourcesRef.current, tracksRef.current, clamped);
+      }
+    },
+    [engine]
+  );
+
+  const handleSkip = useCallback(
+    (delta: number) => {
+      handleSeek(playheadRef.current + delta);
+    },
+    [handleSeek]
+  );
+
+  // Media Session: registered once with stable, ref-backed handlers so system
+  // Play/Pause/seek controls (Control Center, lock screen) always act on the
+  // real current state, never a stale snapshot from mount time.
+  useEffect(() => {
+    configureAudioSession();
+    setupMediaSessionHandlers({
+      onPlay: () => {
+        if (!engine.isPlaying) handlePlayPause();
+      },
+      onPause: () => {
+        if (engine.isPlaying) handlePlayPause();
+      },
+      onSeekBackward: (offset) => handleSkip(-offset),
+      onSeekForward: (offset) => handleSkip(offset),
+      onSeekTo: (time) => handleSeek(time),
+    });
+  }, [engine, handlePlayPause, handleSeek, handleSkip]);
+
+  useEffect(() => {
+    const base = import.meta.env.BASE_URL;
+    updateMediaSessionMetadata('Projet AudioCut', [
+      { src: `${base}icons/icon-192.png`, sizes: '192x192', type: 'image/png' },
+      { src: `${base}icons/icon-512.png`, sizes: '512x512', type: 'image/png' },
+    ]);
+  }, []);
+
+  useEffect(() => {
+    setMediaSessionPlaybackState(clips.length === 0 ? 'none' : isPlaying ? 'playing' : 'paused');
+  }, [isPlaying, clips.length]);
+
+  // Keeps a real HTMLMediaElement "now playing" session alive alongside our
+  // Web Audio graph so iOS/Android can show AudioCut in Control Center / the
+  // lock screen — see mediaSession.ts for why this is needed and what it does.
+  useEffect(() => {
+    const audio = bgAudioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.play().catch(() => {
+        // Autoplay can be refused in rare cases — harmless, playback itself is unaffected.
+      });
+    } else {
+      audio.pause();
     }
-  }
+  }, [isPlaying]);
 
-  function handleSkip(delta: number) {
-    handleSeek(playheadRef.current + delta);
-  }
+  // If the platform suspends the AudioContext while backgrounded, try to
+  // resume it cleanly when AudioCut comes back — never spin up a second
+  // context and never force a restart if the platform won't allow it.
+  useEffect(() => {
+    function handleForeground() {
+      if (document.visibilityState === 'visible' && engine.ctx.state === 'suspended') {
+        engine.ctx.resume().catch(() => {
+          // iOS may refuse resume outside a user gesture — the next Play tap will recover it.
+        });
+      }
+    }
+    function handlePageHide() {
+      // Intentionally no-op: we don't pause on backgrounding so playback can
+      // continue where the platform allows it; handleForeground resyncs on return.
+    }
+    document.addEventListener('visibilitychange', handleForeground);
+    window.addEventListener('pageshow', handleForeground);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleForeground);
+      window.removeEventListener('pageshow', handleForeground);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [engine]);
 
   function handleAddAudioClick() {
     setSheet({ type: 'trackPicker' });
@@ -470,12 +567,27 @@ export default function App() {
     }
   }
 
-  async function handleRenderExport(name: string, sampleRate: number, onProgress: (p: number) => void) {
+  async function handleRenderExport(
+    name: string,
+    format: 'wav' | 'mp3',
+    sampleRate: number,
+    bitrateKbps: number,
+    onProgress: (p: number) => void
+  ) {
     pauseIfPlaying();
-    const mixBuffer = await renderMix(clipsRef.current, sourcesRef.current, tracksRef.current, sampleRate, onProgress);
-    const blob = audioBufferToWav(mixBuffer);
-    const filename = `${sanitizeFilename(name)}.wav`;
-    return { blob, filename };
+    // MP3 has two real phases (mix render, then encode) — split the bar honestly between them.
+    const renderWeight = format === 'mp3' ? 0.5 : 1;
+    const mixBuffer = await renderMix(clipsRef.current, sourcesRef.current, tracksRef.current, sampleRate, (p) =>
+      onProgress(p * renderWeight)
+    );
+
+    if (format === 'wav') {
+      const blob = audioBufferToWav(mixBuffer);
+      return { blob, filename: `${sanitizeFilename(name)}.wav`, mimeType: 'audio/wav' as const };
+    }
+
+    const blob = await encodeMp3(mixBuffer, bitrateKbps, (p) => onProgress(0.5 + p * 0.5));
+    return { blob, filename: `${sanitizeFilename(name)}.mp3`, mimeType: 'audio/mpeg' as const };
   }
 
   const selectedClip = clips.find((c) => c.id === selectedClipId) || null;
@@ -491,6 +603,8 @@ export default function App() {
         style={{ display: 'none' }}
         onChange={handleFilesSelected}
       />
+      <audio ref={bgAudioRef} src={SILENT_KEEPALIVE_SRC} loop playsInline preload="auto" hidden />
+
 
       <div className="topbar">
         <div className="app-logo">
@@ -534,6 +648,7 @@ export default function App() {
           activeTrackId={activeTrackId}
           onSelectClip={setSelectedClipId}
           onSeek={handleSeek}
+          onScrubPreview={setScrubPreviewTime}
           onMoveClip={handleMoveClip}
           onTrimLeft={handleTrimLeft}
           onTrimRight={handleTrimRight}
@@ -549,7 +664,7 @@ export default function App() {
 
       <TransportBar
         isPlaying={isPlaying}
-        currentTime={playheadTime}
+        currentTime={scrubPreviewTime ?? playheadTime}
         totalTime={totalDuration}
         onPlayPause={handlePlayPause}
         onSeek={handleSeek}

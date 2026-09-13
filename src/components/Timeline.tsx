@@ -22,6 +22,7 @@ interface Props {
   activeTrackId: number;
   onSelectClip: (id: string | null) => void;
   onSeek: (time: number) => void;
+  onScrubPreview: (time: number | null) => void;
   onMoveClip: (id: string, newTimelineStart: number) => void;
   onTrimLeft: (id: string, newSourceStart: number, newTimelineStart: number) => void;
   onTrimRight: (id: string, newSourceEnd: number) => void;
@@ -37,7 +38,6 @@ interface Props {
 interface PointerInfo {
   x: number;
   y: number;
-  onRuler: boolean;
 }
 
 export default function Timeline({
@@ -52,6 +52,7 @@ export default function Timeline({
   activeTrackId,
   onSelectClip,
   onSeek,
+  onScrubPreview,
   onMoveClip,
   onTrimLeft,
   onTrimRight,
@@ -65,10 +66,11 @@ export default function Timeline({
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
 
   const pointers = useRef(new Map<number, PointerInfo>());
   const pinchRef = useRef<{ initialDist: number; initialPxPerSec: number; midTime: number; midClientX: number } | null>(null);
-  const seekDragRef = useRef<{ pointerId: number } | null>(null);
+  const scrubRef = useRef<{ pointerId: number } | null>(null);
   const emptyTapRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
 
   let maxEnd = 30;
@@ -77,10 +79,15 @@ export default function Timeline({
     if (end > maxEnd) maxEnd = end;
   }
   const contentWidth = (maxEnd + 20) * pxPerSec;
-  const playheadPx = playheadTime * pxPerSec;
+  const displayedTime = scrubTime ?? playheadTime;
+  const playheadPx = displayedTime * pxPerSec;
 
   useLayoutEffect(() => {
-    if (!isPlaying) return;
+    // Never fight the user's finger: auto-follow only runs while actually
+    // playing and only when nobody is mid-gesture on the timeline (a manual
+    // scrub keeps its own local preview and doesn't touch playheadTime until
+    // release, so this effect naturally won't re-fire during a drag).
+    if (!isPlaying || scrubRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const viewWidth = el.clientWidth;
@@ -98,27 +105,52 @@ export default function Timeline({
     el.scrollLeft = Math.max(0, pinch.midTime * pxPerSec - (pinch.midClientX - rect.left));
   }, [pxPerSec]);
 
-  function seekFromClientX(clientX: number) {
+  function timeFromClientX(clientX: number): number {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el) return 0;
     const rect = el.getBoundingClientRect();
     const x = clientX - rect.left + el.scrollLeft;
-    onSeek(Math.max(0, x / pxPerSec));
+    return Math.max(0, x / pxPerSec);
+  }
+
+  function beginScrub(pointerId: number, clientX: number) {
+    scrubRef.current = { pointerId };
+    const t = timeFromClientX(clientX);
+    setScrubTime(t);
+    onScrubPreview(t);
+  }
+
+  function updateScrub(clientX: number) {
+    const t = timeFromClientX(clientX);
+    setScrubTime(t);
+    onScrubPreview(t);
+  }
+
+  function commitScrub() {
+    if (scrubTime != null) onSeek(scrubTime);
+    setScrubTime(null);
+    onScrubPreview(null);
+    scrubRef.current = null;
   }
 
   function handlePointerDown(e: React.PointerEvent) {
-    const onRuler = (e.target as Element).closest('.ruler') != null;
-    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, onRuler });
+    const target = e.target as Element;
+    const isScrubTarget = target.closest('.ruler') != null || target.closest('.playhead-handle') != null;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
     if (pointers.current.size === 1) {
-      if (onRuler) {
-        seekDragRef.current = { pointerId: e.pointerId };
-        seekFromClientX(e.clientX);
+      if (isScrubTarget) {
+        (target as Element).setPointerCapture?.(e.pointerId);
+        beginScrub(e.pointerId, e.clientX);
       } else {
         emptyTapRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, moved: false };
       }
     } else if (pointers.current.size === 2) {
-      seekDragRef.current = null;
+      if (scrubRef.current) {
+        setScrubTime(null);
+        onScrubPreview(null);
+        scrubRef.current = null;
+      }
       emptyTapRef.current = null;
       const pts = [...pointers.current.values()];
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -151,8 +183,8 @@ export default function Timeline({
     }
 
     if (pointers.current.size === 1) {
-      if (seekDragRef.current?.pointerId === e.pointerId) {
-        seekFromClientX(e.clientX);
+      if (scrubRef.current?.pointerId === e.pointerId) {
+        updateScrub(e.clientX);
       } else if (emptyTapRef.current?.pointerId === e.pointerId) {
         const dx = e.clientX - emptyTapRef.current.startX;
         const dy = e.clientY - emptyTapRef.current.startY;
@@ -164,10 +196,15 @@ export default function Timeline({
   function handlePointerUp(e: React.PointerEvent) {
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinchRef.current = null;
-    if (seekDragRef.current?.pointerId === e.pointerId) seekDragRef.current = null;
+    if (scrubRef.current?.pointerId === e.pointerId) commitScrub();
     if (emptyTapRef.current?.pointerId === e.pointerId) {
-      if (!emptyTapRef.current.moved) onSelectClip(null);
+      const tap = emptyTapRef.current;
       emptyTapRef.current = null;
+      if (!tap.moved) {
+        // Tap on empty timeline space: deselect any clip and move the playhead there.
+        onSelectClip(null);
+        onSeek(timeFromClientX(e.clientX));
+      }
     }
   }
 
@@ -258,7 +295,19 @@ export default function Timeline({
             );
           })}
 
-          <div className="playhead" style={{ left: playheadPx, height: RULER_HEIGHT + TRACK_NAMES.length * TRACK_HEIGHT }} />
+          {(() => {
+            const fullHeight = RULER_HEIGHT + TRACK_NAMES.length * TRACK_HEIGHT;
+            return (
+              <>
+                {/* Wide invisible hit column so the playhead is easy to grab anywhere along
+                    its height, without stealing taps from a clip it happens to cross —
+                    z-index keeps it below clips (their own pointerdown already wins there)
+                    but above the plain track background. */}
+                <div className="playhead-handle" style={{ left: playheadPx, height: fullHeight }} />
+                <div className={`playhead ${scrubRef.current ? 'playhead-active' : ''}`} style={{ left: playheadPx, height: fullHeight }} />
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

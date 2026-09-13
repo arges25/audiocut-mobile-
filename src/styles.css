@@ -294,6 +294,7 @@ html, body {
   border: 1px solid var(--track-accent, #3a4552);
   touch-action: none;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  z-index: 4;
 }
 
 .clip-selected {
@@ -361,6 +362,38 @@ html, body {
   pointer-events: none;
   z-index: 8;
   box-shadow: 0 0 4px rgba(255, 90, 54, 0.6);
+  transform: translateX(-0.75px);
+}
+
+.playhead-active {
+  width: 2px;
+  box-shadow: 0 0 8px rgba(255, 90, 54, 0.9);
+}
+
+/* Wide invisible column so the playhead line is easy to grab with a finger
+   (not just its 1.5px visual width) without stealing taps from a clip it
+   crosses — z-index sits below .clip (4) so a clip always wins where they
+   overlap, but above the plain track background elsewhere. */
+.playhead-handle {
+  position: absolute;
+  top: 0;
+  width: 28px;
+  margin-left: -14px;
+  z-index: 2;
+  touch-action: none;
+}
+
+.playhead-handle::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 13px;
+  border-radius: 999px;
+  background: #ff5a36;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 /* ---------- Transport bar ---------- */
