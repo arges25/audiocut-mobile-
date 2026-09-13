@@ -29,6 +29,7 @@ import Timeline from './components/Timeline';
 import TransportBar from './components/TransportBar';
 import ClipToolbar from './components/ClipToolbar';
 import ClipContextMenu from './components/ClipContextMenu';
+import ContextPanel from './components/ContextPanel';
 import TrackVolumeSheet from './components/sheets/TrackVolumeSheet';
 import EffectsSheet from './components/sheets/EffectsSheet';
 import IntroOutroSheet from './components/sheets/IntroOutroSheet';
@@ -38,8 +39,8 @@ import SettingsSheet from './components/sheets/SettingsSheet';
 
 type SheetState =
   | { type: 'trackPicker' }
+  | { type: 'trackPickerForSource'; sourceId: string }
   | { type: 'trackVolume'; trackId: number }
-  | { type: 'trackFx'; trackId: number }
   | { type: 'clipVolume' }
   | { type: 'clipEffects' }
   | { type: 'intro' }
@@ -101,9 +102,13 @@ export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
   const [contextMenu, setContextMenu] = useState<{ clipId: string; x: number; y: number } | null>(null);
+  const [trackFxPanel, setTrackFxPanel] = useState<number | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [previewingSourceId, setPreviewingSourceId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bgAudioRef = useRef<HTMLAudioElement>(null);
+  const previewNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const sourcesRef = useRef(sources);
   sourcesRef.current = sources;
   const tracksRef = useRef(tracks);
@@ -214,6 +219,15 @@ export default function App() {
       setPlayheadTime(t);
       setIsPlaying(false);
     } else {
+      if (previewNodeRef.current) {
+        try {
+          previewNodeRef.current.stop();
+        } catch {
+          // already stopped
+        }
+        previewNodeRef.current = null;
+        setPreviewingSourceId(null);
+      }
       await engine.play(clipsRef.current, sourcesRef.current, tracksRef.current, playheadRef.current);
       setIsPlaying(true);
     }
@@ -319,6 +333,92 @@ export default function App() {
     setActiveTrackId(trackId);
     setSheet(null);
     fileInputRef.current?.click();
+  }
+
+  /** Reuses a source already decoded in memory/IndexedDB — no re-import from the iPhone's file picker. */
+  function handleAddExistingSourceToTrack(sourceId: string, trackId: number) {
+    const source = sourcesRef.current.get(sourceId);
+    if (!source) return;
+    pauseIfPlaying();
+    setActiveTrackId(trackId);
+    const existingOnTrack = clipsRef.current.filter((c) => c.trackId === trackId);
+    const nextStart = existingOnTrack.length === 0 ? 0 : Math.max(...existingOnTrack.map(clipTimelineEnd));
+    const clip: Clip = {
+      id: makeId(),
+      trackId,
+      sourceId,
+      timelineStart: nextStart,
+      sourceStart: 0,
+      sourceEnd: source.buffer.duration,
+      volume: 1,
+      fadeIn: 0,
+      fadeOut: 0,
+      introType: 'none',
+      outroType: 'none',
+      effects: defaultEffectParams(),
+    };
+    history.commit((prev) => [...prev, clip]);
+    setSheet(null);
+    setLibraryOpen(false);
+    setSelectedClipId(clip.id);
+  }
+
+  function handleRequestAddExistingSource(sourceId: string) {
+    setSheet({ type: 'trackPickerForSource', sourceId });
+  }
+
+  /** One-shot preview of a raw imported source (not a timeline clip) — a plain
+   * AudioBufferSourceNode straight to destination, independent of the
+   * multi-track engine so it can never desync playback or the export graph. */
+  function handlePreviewSource(sourceId: string) {
+    if (previewNodeRef.current) {
+      try {
+        previewNodeRef.current.stop();
+      } catch {
+        // already stopped
+      }
+      previewNodeRef.current = null;
+      if (previewingSourceId === sourceId) {
+        setPreviewingSourceId(null);
+        return;
+      }
+    }
+    const source = sourcesRef.current.get(sourceId);
+    if (!source) return;
+    pauseIfPlaying();
+    engine.ctx.resume().catch(() => {});
+    const node = engine.ctx.createBufferSource();
+    node.buffer = source.buffer;
+    const gain = engine.ctx.createGain();
+    gain.gain.value = 0.9;
+    node.connect(gain).connect(engine.ctx.destination);
+    node.onended = () => {
+      if (previewNodeRef.current === node) {
+        previewNodeRef.current = null;
+        setPreviewingSourceId(null);
+      }
+    };
+    node.start();
+    previewNodeRef.current = node;
+    setPreviewingSourceId(sourceId);
+  }
+
+  function handleQuickTrackFx(effectKey: 'reverb' | 'echo') {
+    const trackId = activeTrackId;
+    setTracks((prev) =>
+      prev.map((t, i) =>
+        i === trackId ? { ...t, effects: { ...t.effects, [effectKey]: { ...t.effects[effectKey], enabled: true } } } : t
+      )
+    );
+    setTrackFxPanel(trackId);
+    setLibraryOpen(false);
+  }
+
+  function handleQuickIntroOutro(mode: 'intro' | 'outro') {
+    const clip = findFirstClipOnTrack(activeTrackId);
+    if (!clip) return;
+    setSelectedClipId(clip.id);
+    openClipSheet(mode);
   }
 
   async function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -592,6 +692,22 @@ export default function App() {
 
   const selectedClip = clips.find((c) => c.id === selectedClipId) || null;
   const selectedSource = selectedClip ? sources.get(selectedClip.sourceId) : undefined;
+  const hasActiveTrackClip = clips.some((c) => c.trackId === activeTrackId);
+
+  // Priority order for the panel below the tracks: a selected clip always
+  // wins (even over an FX/library view left open from before), then an
+  // explicitly requested track-FX or library view, then a light monitor
+  // while playing with nothing selected, else the default "add / recent" home.
+  const panelView =
+    selectedClip && selectedSource
+      ? 'clip'
+      : trackFxPanel !== null
+        ? 'trackFx'
+        : libraryOpen
+          ? 'library'
+          : isPlaying
+            ? 'monitoring'
+            : 'home';
 
   return (
     <div className="app">
@@ -657,8 +773,44 @@ export default function App() {
           onLongPressClip={handleLongPressClip}
           onTrackVolume={(trackId) => setSheet({ type: 'trackVolume', trackId })}
           onTrackMuteToggle={handleTrackMuteToggle}
-          onTrackFx={(trackId) => setSheet({ type: 'trackFx', trackId })}
+          onTrackFx={(trackId) => {
+            setTrackFxPanel((prev) => (prev === trackId ? null : trackId));
+            setLibraryOpen(false);
+          }}
           onQuickAddTrack={handlePickTrack}
+        />
+        <ContextPanel
+          view={panelView}
+          sources={sources}
+          clips={clips}
+          tracks={tracks}
+          activeTrackId={activeTrackId}
+          selectedClip={selectedClip}
+          selectedSource={selectedSource}
+          trackFxId={trackFxPanel}
+          playheadTime={playheadTime}
+          totalDuration={totalDuration}
+          previewingSourceId={previewingSourceId}
+          onCloseTrackFx={() => setTrackFxPanel(null)}
+          onOpenLibrary={() => {
+            setLibraryOpen(true);
+            setTrackFxPanel(null);
+          }}
+          onCloseLibrary={() => setLibraryOpen(false)}
+          onTrackFxChange={handleTrackFxChange}
+          onSplit={() => handleSplit()}
+          onVolume={() => openClipSheet('clipVolume')}
+          onIntro={() => openClipSheet('intro')}
+          onOutro={() => openClipSheet('outro')}
+          onEffects={() => openClipSheet('clipEffects')}
+          onDuplicate={() => handleDuplicate()}
+          onDelete={() => handleDelete()}
+          onAddAudioClick={handleAddAudioClick}
+          onPreviewSource={handlePreviewSource}
+          onAddExistingSource={handleRequestAddExistingSource}
+          onQuickTrackFx={handleQuickTrackFx}
+          onQuickIntroOutro={handleQuickIntroOutro}
+          hasActiveTrackClip={hasActiveTrackClip}
         />
       </div>
 
@@ -716,6 +868,28 @@ export default function App() {
         </div>
       )}
 
+      {sheet?.type === 'trackPickerForSource' && (() => {
+        const sourceId = sheet.sourceId;
+        return (
+          <div className="sheet-overlay" onPointerDown={(e) => { if (e.target === e.currentTarget) setSheet(null); }}>
+            <div className="sheet">
+              <div className="sheet-header">
+                <span className="sheet-title">Ajouter à la piste</span>
+                <button className="sheet-close" onClick={() => setSheet(null)} aria-label="Fermer">×</button>
+              </div>
+              <div className="sheet-body">
+                {TRACK_NAMES.map((name, i) => (
+                  <button key={i} className="sheet-menu-row" onClick={() => handleAddExistingSourceToTrack(sourceId, i)}>
+                    <span>{name}</span>
+                    <span className="sheet-menu-chevron">›</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {sheet?.type === 'trackVolume' && (
         <TrackVolumeSheet
           label={TRACK_NAMES[sheet.trackId]}
@@ -725,22 +899,6 @@ export default function App() {
           onClose={() => setSheet(null)}
         />
       )}
-
-      {sheet?.type === 'trackFx' && (() => {
-        const trackId = sheet.trackId;
-        const sample = findFirstClipOnTrack(trackId);
-        const sampleSource = sample ? sources.get(sample.sourceId) : undefined;
-        return (
-          <EffectsSheet
-            title={`Effets de piste — ${TRACK_NAMES[trackId]}`}
-            initialEffects={tracks[trackId].effects}
-            onChange={(fx) => handleTrackFxChange(trackId, fx)}
-            onClose={() => setSheet(null)}
-            previewSource={sample && sampleSource ? { buffer: sampleSource.buffer, start: sample.sourceStart, end: sample.sourceEnd } : null}
-            previewPlayer={previewPlayer}
-          />
-        );
-      })()}
 
       {sheet?.type === 'clipVolume' && selectedClip && (
         <TrackVolumeSheet

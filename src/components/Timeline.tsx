@@ -67,11 +67,20 @@ export default function Timeline({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [scrubTime, setScrubTime] = useState<number | null>(null);
+  // Auto-follow is on by default but is a manual toggle from here on: any real
+  // user interaction with the timeline (touch, scroll, scrub) suspends it so
+  // exploring the timeline during playback never fights the user's finger.
+  // Re-enabled only via the "Suivre" button or the floating "Revenir" pill.
+  const [follow, setFollow] = useState(true);
 
   const pointers = useRef(new Map<number, PointerInfo>());
   const pinchRef = useRef<{ initialDist: number; initialPxPerSec: number; midTime: number; midClientX: number } | null>(null);
   const scrubRef = useRef<{ pointerId: number } | null>(null);
   const emptyTapRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
+  // Set right before we programmatically change scrollLeft (auto-follow, pinch
+  // recenter) so the next onScroll doesn't mistake it for a manual pan and
+  // switch follow off.
+  const programmaticScrollRef = useRef(false);
 
   let maxEnd = 30;
   for (const clip of clips) {
@@ -81,29 +90,57 @@ export default function Timeline({
   const contentWidth = (maxEnd + 20) * pxPerSec;
   const displayedTime = scrubTime ?? playheadTime;
   const playheadPx = displayedTime * pxPerSec;
+  const realPlayheadPx = playheadTime * pxPerSec;
 
   useLayoutEffect(() => {
     // Never fight the user's finger: auto-follow only runs while actually
-    // playing and only when nobody is mid-gesture on the timeline (a manual
-    // scrub keeps its own local preview and doesn't touch playheadTime until
-    // release, so this effect naturally won't re-fire during a drag).
-    if (!isPlaying || scrubRef.current) return;
+    // playing, only while the user hasn't taken manual control (follow), and
+    // only when nobody is mid-gesture on the timeline (a manual scrub keeps
+    // its own local preview and doesn't touch playheadTime until release, so
+    // this effect naturally won't re-fire during a drag).
+    if (!isPlaying || !follow || scrubRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const viewWidth = el.clientWidth;
     const margin = viewWidth * 0.25;
     if (playheadPx < el.scrollLeft + margin || playheadPx > el.scrollLeft + viewWidth - margin) {
+      programmaticScrollRef.current = true;
       el.scrollLeft = Math.max(0, playheadPx - margin);
     }
-  }, [playheadPx, isPlaying]);
+  }, [playheadPx, isPlaying, follow]);
 
   useLayoutEffect(() => {
     const pinch = pinchRef.current;
     const el = scrollRef.current;
     if (!pinch || !el) return;
     const rect = el.getBoundingClientRect();
+    programmaticScrollRef.current = true;
     el.scrollLeft = Math.max(0, pinch.midTime * pxPerSec - (pinch.midClientX - rect.left));
   }, [pxPerSec]);
+
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    const next = e.currentTarget.scrollLeft;
+    setScrollLeft(next);
+    if (programmaticScrollRef.current) {
+      // This scroll was caused by our own auto-follow/pinch-recenter code, not
+      // a manual pan — consume the flag and leave `follow` untouched.
+      programmaticScrollRef.current = false;
+      return;
+    }
+    // A genuine user-driven scroll (touch pan or momentum fling): the user is
+    // exploring the timeline, so stop fighting them.
+    if (follow) setFollow(false);
+  }
+
+  function handleReturnToPlayhead() {
+    setFollow(true);
+    const el = scrollRef.current;
+    if (!el) return;
+    const viewWidth = el.clientWidth;
+    const margin = viewWidth * 0.25;
+    programmaticScrollRef.current = true;
+    el.scrollLeft = Math.max(0, realPlayheadPx - margin);
+  }
 
   function timeFromClientX(clientX: number): number {
     const el = scrollRef.current;
@@ -134,6 +171,11 @@ export default function Timeline({
   }
 
   function handlePointerDown(e: React.PointerEvent) {
+    // "L'utilisateur touche la timeline" is itself the trigger, before we even
+    // know if this becomes a tap, a pan, a scrub or a pinch — only while
+    // playing, so idle-time editing gestures never leave `follow` stuck off
+    // for the next playback.
+    if (isPlaying && pointers.current.size === 0 && follow) setFollow(false);
     const target = e.target as Element;
     const isScrubTarget = target.closest('.ruler') != null || target.closest('.playhead-handle') != null;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -214,9 +256,12 @@ export default function Timeline({
   const viewEnd = Math.ceil(((scrollLeft + viewportWidth) / pxPerSec + 2) / interval) * interval;
   const ticks: number[] = [];
   for (let t = viewStart; t <= viewEnd; t += interval) ticks.push(Math.max(0, t));
+  const rowHeight = RULER_HEIGHT + TRACK_NAMES.length * TRACK_HEIGHT;
+  const playheadVisible = realPlayheadPx >= scrollLeft && realPlayheadPx <= scrollLeft + viewportWidth;
+  const showReturnButton = isPlaying && !follow && !playheadVisible;
 
   return (
-    <div className="timeline-row">
+    <div className="timeline-row" style={{ height: rowHeight }}>
       <div className="track-headers" style={{ width: HEADER_WIDTH }}>
         <div className="track-headers-spacer" style={{ height: RULER_HEIGHT }} />
         {TRACK_NAMES.map((name, trackId) => (
@@ -236,7 +281,7 @@ export default function Timeline({
       <div
         className="timeline-scroll"
         ref={scrollRef}
-        onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
+        onScroll={handleScroll}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -310,6 +355,27 @@ export default function Timeline({
           })()}
         </div>
       </div>
+
+      <button
+        className={`timeline-follow-btn ${follow ? 'timeline-follow-btn-active' : ''}`}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => (follow ? setFollow(false) : handleReturnToPlayhead())}
+        aria-label={follow ? 'Désactiver le suivi automatique' : 'Activer le suivi automatique'}
+        aria-pressed={follow}
+      >
+        <span className="timeline-follow-icon">🎯</span>
+        Suivre
+      </button>
+
+      {showReturnButton && (
+        <button
+          className="timeline-return-btn"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={handleReturnToPlayhead}
+        >
+          → Revenir à {formatTickLabel(playheadTime, 1)}
+        </button>
+      )}
     </div>
   );
 }

@@ -169,12 +169,19 @@ html, body {
   min-height: 0;
   overflow: hidden;
   background: #0d0e11;
+  display: flex;
+  flex-direction: column;
 }
 
+/* Sized intrinsically (ruler + 3 track lanes, set inline from Timeline.tsx's
+   own RULER_HEIGHT/TRACK_HEIGHT constants) rather than stretched to fill —
+   whatever room is left below goes to .context-panel instead of sitting
+   empty. Never touch these pixel↔time constants for layout purposes. */
 .timeline-row {
   display: flex;
-  height: 100%;
   width: 100%;
+  flex-shrink: 0;
+  position: relative;
 }
 
 .track-headers {
@@ -241,7 +248,6 @@ html, body {
 .timeline-scroll {
   flex: 1;
   min-width: 0;
-  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -250,7 +256,6 @@ html, body {
 
 .timeline-content {
   position: relative;
-  height: 100%;
 }
 
 .ruler {
@@ -394,6 +399,56 @@ html, body {
   border-radius: 999px;
   background: #ff5a36;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- Timeline auto-follow controls ---------- */
+
+.timeline-follow-btn {
+  position: absolute;
+  bottom: 7px;
+  right: 7px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(19, 20, 23, 0.9);
+  border: 1px solid #34363e;
+  color: #9a9ba5;
+  border-radius: 999px;
+  padding: 4px 10px 4px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  touch-action: manipulation;
+}
+
+.timeline-follow-btn-active {
+  background: rgba(255, 90, 54, 0.18);
+  border-color: #ff5a36;
+  color: #ff9d80;
+}
+
+.timeline-follow-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.timeline-return-btn {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: #ff5a36;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  touch-action: manipulation;
+  animation: sheet-fade-in 0.15s ease-out;
+  white-space: nowrap;
 }
 
 /* ---------- Transport bar ---------- */
@@ -1001,7 +1056,354 @@ html, body {
   color: #ff8a72;
 }
 
+/* ---------- Contextual panel (the space under the 3 tracks) ---------- */
+
+.context-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #12151a;
+  border-top: 1px solid #24252a;
+  padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: sheet-fade-in 0.12s ease-out;
+}
+
+/* Same flexbox pitfall as .sheet-body > * above: a flex column child with
+   overflow:hidden (e.g. the reused .effect-row) gets an automatic min-height
+   of 0 and collapses instead of sitting at its content height. */
+.context-panel > * {
+  flex-shrink: 0;
+}
+
+.cp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cp-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.cp-subtitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7d7e88;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin: 0 0 8px;
+}
+
+.cp-back-btn {
+  background: #24262c;
+  color: #d8d9e0;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cp-card-row {
+  display: flex;
+  gap: 8px;
+}
+
+.cp-card {
+  flex: 1;
+  background: #1c1e24;
+  border: 1px solid #2a2c33;
+  border-radius: 14px;
+  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  touch-action: manipulation;
+}
+
+.cp-card:active {
+  background: #262830;
+}
+
+.cp-card-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.cp-card-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cp-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #1c1e24;
+  border: 1px solid #262830;
+  border-radius: 12px;
+  padding: 9px 10px;
+}
+
+.cp-list-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cp-list-item-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-list-item-meta {
+  font-size: 11px;
+  color: #8a8b95;
+}
+
+.cp-list-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.cp-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #26282f;
+  border: none;
+  color: #d8d9e0;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+
+.cp-icon-btn-active {
+  background: #ff5a36;
+  color: #fff;
+}
+
+.cp-empty {
+  font-size: 12px;
+  color: #6d6e78;
+  padding: 6px 2px;
+}
+
+.cp-shortcuts-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.cp-shortcut-btn {
+  background: #1c1e24;
+  border: 1px solid #2a2c33;
+  color: #d8d9e0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  touch-action: manipulation;
+}
+
+.cp-shortcut-btn-active {
+  border-color: #ff5a36;
+  color: #ff9d80;
+  background: rgba(255, 90, 54, 0.12);
+}
+
+/* ---------- Clip inspector ---------- */
+
+.cp-clip-track-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #9a9ba5;
+  background: #1c1e24;
+  border: 1px solid var(--track-accent, #2a2c33);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.cp-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.cp-meta-cell {
+  background: #1c1e24;
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cp-meta-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #7d7e88;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.cp-meta-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.cp-active-fx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1c1e24;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.cp-active-fx-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.cp-active-fx-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff9d80;
+  font-variant-numeric: tabular-nums;
+}
+
+.cp-danger-btn {
+  background: #4a1c1c;
+  color: #ff9d8a;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  touch-action: manipulation;
+}
+
+.cp-danger-btn:active {
+  background: #5c2424;
+}
+
+/* ---------- Monitoring (playing, nothing selected) ---------- */
+
+.cp-monitor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 2px;
+}
+
+.cp-monitor-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #9a9ba5;
+}
+
+.cp-monitor-time {
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.cp-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 260px;
+}
+
+.cp-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cp-meter-channel {
+  font-size: 10px;
+  font-weight: 700;
+  color: #6d6e78;
+  width: 12px;
+}
+
+.cp-meter-track {
+  flex: 1;
+  height: 8px;
+  background: #1c1e24;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.cp-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3ecf8e, #ff5a36);
+  border-radius: 999px;
+  transition: width 0.08s linear;
+}
+
 @media (orientation: landscape) and (max-height: 500px) {
+  .context-panel {
+    padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .cp-card {
+    padding: 8px 6px;
+  }
+  .cp-meta-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .cp-monitor-time {
+    font-size: 15px;
+  }
+
   .topbar {
     padding: 6px 14px;
   }

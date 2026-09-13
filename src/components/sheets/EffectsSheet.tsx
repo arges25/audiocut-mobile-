@@ -19,9 +19,9 @@ interface Props {
   previewPlayer: EffectPreviewPlayer;
 }
 
-type EffectKey = keyof EffectParams;
+export type EffectKey = keyof EffectParams;
 
-const TABS: { key: EffectKey; label: string }[] = [
+export const TABS: { key: EffectKey; label: string }[] = [
   { key: 'reverb', label: 'Reverb' },
   { key: 'echo', label: 'Echo' },
   { key: 'delay', label: 'Delay' },
@@ -121,7 +121,7 @@ export default function EffectsSheet({ title, initialEffects, onChange, onClose,
   );
 }
 
-function EffectFields({
+export function EffectFields({
   effectKey,
   effects,
   onUpdate,
