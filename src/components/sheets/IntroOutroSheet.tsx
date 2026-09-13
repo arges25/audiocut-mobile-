@@ -5,24 +5,24 @@ import BottomSheet from '../BottomSheet';
 import SheetSlider from './SheetSlider';
 import { scheduleClip } from '../../audio/graph';
 
-const INTRO_OPTIONS: { value: IntroType; label: string; defaultDuration?: number }[] = [
-  { value: 'none', label: 'Aucun' },
-  { value: 'fadeIn', label: 'Fade In', defaultDuration: 1 },
-  { value: 'fadeInFast', label: 'Fade In rapide', defaultDuration: 0.3 },
-  { value: 'fadeInSlow', label: 'Fade In lent', defaultDuration: 3 },
-  { value: 'volumeRamp', label: 'Volume progressif', defaultDuration: 2 },
-  { value: 'filterRamp', label: 'Filtre progressif', defaultDuration: 2 },
+const INTRO_OPTIONS: { value: IntroType; label: string; icon: string; defaultDuration?: number }[] = [
+  { value: 'none', label: 'Aucun', icon: '🚫' },
+  { value: 'fadeIn', label: 'Fade In', icon: '↗', defaultDuration: 1 },
+  { value: 'fadeInFast', label: 'Fade In rapide', icon: '⚡', defaultDuration: 0.3 },
+  { value: 'fadeInSlow', label: 'Fade In lent', icon: '🐢', defaultDuration: 3 },
+  { value: 'volumeRamp', label: 'Volume progressif', icon: '🔊', defaultDuration: 2 },
+  { value: 'filterRamp', label: 'Filtre progressif', icon: '🎛', defaultDuration: 2 },
 ];
 
-const OUTRO_OPTIONS: { value: OutroType; label: string; defaultDuration?: number }[] = [
-  { value: 'none', label: 'Aucun' },
-  { value: 'fadeOut', label: 'Fade Out', defaultDuration: 1 },
-  { value: 'fadeOutFast', label: 'Fade Out rapide', defaultDuration: 0.3 },
-  { value: 'fadeOutSlow', label: 'Fade Out lent', defaultDuration: 3 },
-  { value: 'echoTail', label: 'Echo final', defaultDuration: 0.5 },
-  { value: 'reverbTail', label: 'Reverb finale', defaultDuration: 0.5 },
-  { value: 'filterRamp', label: 'Filtre progressif', defaultDuration: 2 },
-  { value: 'disappear', label: 'Disparition progressive', defaultDuration: 2 },
+const OUTRO_OPTIONS: { value: OutroType; label: string; icon: string; defaultDuration?: number }[] = [
+  { value: 'none', label: 'Aucun', icon: '🚫' },
+  { value: 'fadeOut', label: 'Fade Out', icon: '↘', defaultDuration: 1 },
+  { value: 'fadeOutFast', label: 'Fade Out rapide', icon: '⚡', defaultDuration: 0.3 },
+  { value: 'fadeOutSlow', label: 'Fade Out lent', icon: '🐢', defaultDuration: 3 },
+  { value: 'echoTail', label: 'Echo final', icon: '🔁', defaultDuration: 0.5 },
+  { value: 'reverbTail', label: 'Reverb finale', icon: '🌊', defaultDuration: 0.5 },
+  { value: 'filterRamp', label: 'Filtre progressif', icon: '🎛', defaultDuration: 2 },
+  { value: 'disappear', label: 'Disparition progressive', icon: '🌫', defaultDuration: 2 },
 ];
 
 const DURATION_PRESETS = [0.1, 0.5, 1, 2, 3, 5, 10];
@@ -110,14 +110,15 @@ export default function IntroOutroSheet({ mode, clip, source, ctx, onChange, onC
         </>
       }
     >
-      <div className="chip-row">
+      <div className="option-grid">
         {options.map((o) => (
           <button
             key={o.value}
-            className={`chip ${type === o.value ? 'chip-selected' : ''}`}
+            className={`option-card ${type === o.value ? 'option-card-selected' : ''}`}
             onClick={() => selectType(o.value)}
           >
-            {o.label}
+            <span className="option-card-icon">{o.icon}</span>
+            <span className="option-card-label">{o.label}</span>
           </button>
         ))}
       </div>

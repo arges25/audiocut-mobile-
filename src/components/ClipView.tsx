@@ -23,6 +23,9 @@ const HANDLE_WIDTH = 14;
 const MOVE_THRESHOLD = 4;
 const MIN_DURATION = 0.1;
 
+/** Musique = blue, Effets = orange (brand accent), Audio = green — accents the waveform/border only, the clip body stays dark. */
+export const TRACK_ACCENTS = ['#4f8ef7', '#ff5a36', '#3ecf8e'];
+
 function ClipView({
   clip,
   source,
@@ -135,11 +138,12 @@ function ClipView({
   const showIntroShade = clip.introType !== 'none' && clip.fadeIn > 0;
   const showOutroShade = clip.outroType !== 'none' && clip.fadeOut > 0;
   const fxActive = hasAnyEffectEnabled(clip.effects);
+  const accent = TRACK_ACCENTS[clip.trackId] ?? TRACK_ACCENTS[0];
 
   return (
     <div
       className={`clip ${isSelected ? 'clip-selected' : ''}`}
-      style={{ left, width, height: bodyHeight }}
+      style={{ left, width, height: bodyHeight, ['--track-accent' as string]: accent }}
       onPointerDown={(e) => handlePointerDown(e, 'move')}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -152,6 +156,7 @@ function ClipView({
           sourceEnd={clip.sourceEnd}
           width={width}
           height={bodyHeight}
+          color={accent}
         />
       </div>
       {(showIntroShade || showOutroShade) && (
