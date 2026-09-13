@@ -25,6 +25,7 @@ import EffectsSheet from './components/sheets/EffectsSheet';
 import IntroOutroSheet from './components/sheets/IntroOutroSheet';
 import ExportSheet from './components/sheets/ExportSheet';
 import ProjectMenuSheet from './components/sheets/ProjectMenuSheet';
+import SettingsSheet from './components/sheets/SettingsSheet';
 
 type SheetState =
   | { type: 'trackPicker' }
@@ -36,6 +37,7 @@ type SheetState =
   | { type: 'outro' }
   | { type: 'export' }
   | { type: 'project' }
+  | { type: 'settings' }
   | null;
 
 function makeId(): string {
@@ -491,13 +493,27 @@ export default function App() {
       />
 
       <div className="topbar">
-        <div className="app-title">AudioCut</div>
+        <div className="app-logo">
+          <svg className="app-logo-icon" width="22" height="20" viewBox="0 0 22 20" fill="none" aria-hidden="true">
+            <rect x="0" y="7" width="3" height="6" rx="1.5" fill="#ff5a36" />
+            <rect x="6" y="3" width="3" height="14" rx="1.5" fill="#fff" />
+            <rect x="12" y="0" width="3" height="20" rx="1.5" fill="#ff5a36" />
+            <rect x="18" y="5" width="3" height="10" rx="1.5" fill="#fff" />
+          </svg>
+          <span className="app-logo-text">
+            <span className="app-logo-audio">Audio</span>
+            <span className="app-logo-cut">Cut</span>
+          </span>
+        </div>
         <div className="topbar-actions">
           <button className="btn btn-icon" onClick={history.undo} disabled={!history.canUndo} aria-label="Annuler">
             ↺
           </button>
           <button className="btn btn-icon" onClick={history.redo} disabled={!history.canRedo} aria-label="Rétablir">
             ↻
+          </button>
+          <button className="btn btn-icon" onClick={() => setSheet({ type: 'settings' })} aria-label="Réglages">
+            ⚙
           </button>
           <button className="btn btn-export" onClick={() => setSheet({ type: 'export' })} disabled={clips.length === 0}>
             Exporter
@@ -527,6 +543,7 @@ export default function App() {
           onTrackVolume={(trackId) => setSheet({ type: 'trackVolume', trackId })}
           onTrackMuteToggle={handleTrackMuteToggle}
           onTrackFx={(trackId) => setSheet({ type: 'trackFx', trackId })}
+          onQuickAddTrack={handlePickTrack}
         />
       </div>
 
@@ -658,10 +675,16 @@ export default function App() {
 
       {sheet?.type === 'project' && (
         <ProjectMenuSheet
-          autosaveEnabled={autosaveEnabled}
-          onToggleAutosave={() => setAutosaveEnabled((v) => !v)}
           onNewProject={handleNewProject}
           onResetProject={handleResetProject}
+          onClose={() => setSheet(null)}
+        />
+      )}
+
+      {sheet?.type === 'settings' && (
+        <SettingsSheet
+          autosaveEnabled={autosaveEnabled}
+          onToggleAutosave={() => setAutosaveEnabled((v) => !v)}
           onClose={() => setSheet(null)}
         />
       )}

@@ -31,6 +31,7 @@ interface Props {
   onTrackVolume: (trackId: number) => void;
   onTrackMuteToggle: (trackId: number) => void;
   onTrackFx: (trackId: number) => void;
+  onQuickAddTrack: (trackId: number) => void;
 }
 
 interface PointerInfo {
@@ -60,6 +61,7 @@ export default function Timeline({
   onTrackVolume,
   onTrackMuteToggle,
   onTrackFx,
+  onQuickAddTrack,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -212,11 +214,16 @@ export default function Timeline({
             ))}
           </div>
 
-          {TRACK_NAMES.map((_, trackId) => (
-            <div key={trackId} className="track-lane" style={{ height: TRACK_HEIGHT }}>
-              {clips
-                .filter((c) => c.trackId === trackId)
-                .map((clip) => {
+          {TRACK_NAMES.map((_, trackId) => {
+            const trackClips = clips.filter((c) => c.trackId === trackId);
+            let trackEnd = 0;
+            for (const c of trackClips) {
+              const end = c.timelineStart + (c.sourceEnd - c.sourceStart);
+              if (end > trackEnd) trackEnd = end;
+            }
+            return (
+              <div key={trackId} className="track-lane" style={{ height: TRACK_HEIGHT }}>
+                {trackClips.map((clip) => {
                   const source = sources.get(clip.sourceId);
                   if (!source) return null;
                   return (
@@ -238,8 +245,18 @@ export default function Timeline({
                     />
                   );
                 })}
-            </div>
-          ))}
+                <button
+                  className="track-lane-add"
+                  style={{ left: trackEnd * pxPerSec + 10 }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => onQuickAddTrack(trackId)}
+                  aria-label={`Ajouter un fichier sur ${TRACK_NAMES[trackId]}`}
+                >
+                  +
+                </button>
+              </div>
+            );
+          })}
 
           <div className="playhead" style={{ left: playheadPx, height: RULER_HEIGHT + TRACK_NAMES.length * TRACK_HEIGHT }} />
         </div>
@@ -258,7 +275,7 @@ function pickTickInterval(pxPerSec: number): number {
 }
 
 function formatTickLabel(seconds: number, interval: number): string {
-  const m = Math.floor(seconds / 60);
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
   const s = seconds % 60;
   if (interval < 1) {
     return `${m}:${s.toFixed(3).padStart(6, '0')}`;

@@ -49,6 +49,30 @@ html, body {
   letter-spacing: 0.3px;
 }
 
+.app-logo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.app-logo-icon {
+  flex-shrink: 0;
+}
+
+.app-logo-text {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.app-logo-audio {
+  color: #fff;
+}
+
+.app-logo-cut {
+  color: #ff5a36;
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -264,10 +288,10 @@ html, body {
 .clip {
   position: absolute;
   top: 5px;
-  background: #2b3542;
+  background: #262b33;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #3a4552;
+  border: 1px solid var(--track-accent, #3a4552);
   touch-action: none;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
@@ -301,21 +325,32 @@ html, body {
 
 .clip-handle {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 13px;
-  background: #ff5a36;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   touch-action: none;
+  z-index: 3;
+}
+
+.clip-handle::after {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px #ff5a36, 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .clip-handle-left {
-  left: 0;
-  border-radius: 7px 0 0 7px;
+  left: -8px;
 }
 
 .clip-handle-right {
-  right: 0;
-  border-radius: 0 7px 7px 0;
+  right: -8px;
 }
 
 .playhead {
@@ -672,6 +707,124 @@ html, body {
 
 .reset-confirm-actions .btn {
   flex: 1;
+}
+
+/* ---------- Effect tabs (Reverb | Echo | Delay | ...) ---------- */
+
+.fx-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.fx-tab {
+  position: relative;
+  background: #26282f;
+  border: 1px solid transparent;
+  color: #c7c8d0;
+  border-radius: 999px;
+  padding: 9px 15px;
+  font-size: 12.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+
+.fx-tab-active {
+  background: rgba(255, 90, 54, 0.15);
+  border-color: #ff5a36;
+  color: #ff9d80;
+}
+
+.fx-tab-dot {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3ecf8e;
+}
+
+.fx-panel {
+  background: #212227;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fx-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fx-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ---------- Option cards (Intro/Outro type picker) ---------- */
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.option-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: #26282f;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 12px 6px;
+  color: #c7c8d0;
+  touch-action: manipulation;
+}
+
+.option-card-icon {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.option-card-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.option-card-selected {
+  border-color: #ff5a36;
+  background: rgba(255, 90, 54, 0.12);
+  color: #ff9d80;
+}
+
+/* ---------- Per-track quick add ---------- */
+
+.track-lane-add {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #26282f;
+  border: 1px solid #383a42;
+  color: #c7c8d0;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  touch-action: manipulation;
 }
 
 /* ---------- Effect rows ---------- */

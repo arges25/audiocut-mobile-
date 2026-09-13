@@ -2,14 +2,12 @@ import { useState } from 'react';
 import BottomSheet from '../BottomSheet';
 
 interface Props {
-  autosaveEnabled: boolean;
-  onToggleAutosave: () => void;
   onNewProject: () => void;
   onResetProject: () => void;
   onClose: () => void;
 }
 
-export default function ProjectMenuSheet({ autosaveEnabled, onToggleAutosave, onNewProject, onResetProject, onClose }: Props) {
+export default function ProjectMenuSheet({ onNewProject, onResetProject, onClose }: Props) {
   const [confirmingReset, setConfirmingReset] = useState(false);
 
   return (
@@ -18,13 +16,6 @@ export default function ProjectMenuSheet({ autosaveEnabled, onToggleAutosave, on
         <span>Nouveau projet</span>
         <span className="sheet-menu-chevron">›</span>
       </button>
-
-      <div className="sheet-menu-row" onClick={onToggleAutosave}>
-        <span>Sauvegarde automatique</span>
-        <span className={`switch ${autosaveEnabled ? 'switch-on' : ''}`}>
-          <span className="switch-knob" />
-        </span>
-      </div>
 
       {!confirmingReset ? (
         <button className="sheet-menu-row sheet-menu-row-danger" onClick={() => setConfirmingReset(true)}>

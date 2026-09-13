@@ -56,11 +56,11 @@ export default function ExportSheet({ onRender, onClose }: Props) {
   }
 
   return (
-    <BottomSheet title="Exporter" onClose={onClose}>
+    <BottomSheet title="Exporter l'audio" onClose={onClose}>
       {stage === 'form' && (
         <>
           <label className="sheet-field">
-            <span>Nom du morceau</span>
+            <span>Nom du fichier</span>
             <input
               className="sheet-input"
               type="text"
